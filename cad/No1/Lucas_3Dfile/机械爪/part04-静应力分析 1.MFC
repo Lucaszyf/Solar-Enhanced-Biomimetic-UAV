@@ -1,0 +1,18 @@
+[StartTime]
+part04-静应力分析 1.MFC=
+[SolverState]
+part04-静应力分析 1.MFC=2
+[MainFrame]
+part04-静应力分析 1.MFC=MCAAAAAAAAAAAAAABAAAAAAAPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPHCCAAAAAAGBAAAAAPIDAAAAADDCAAAAA
+[ShowMin]
+part04-静应力分析 1.MFC=yes
+[SolverType]
+part04-静应力分析 1.MFC=线性分析
+[StudyType]
+part04-静应力分析 1.MFC=-1
+[StudyName]
+part04-静应力分析 1.MFC=静应力分析 1
+[Solver]
+part04-静应力分析 1.MFC=Sparse
+[Dynamic]
+part04-静应力分析 1.MFC=0

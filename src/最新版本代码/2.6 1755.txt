@@ -1,0 +1,418 @@
+#include <Arduino.h>
+#include <esp_now.h>
+#include <WiFi.h>
+#include "bsp_gpio.h"
+#include "bsp_servo.h"
+#include "bsp_attachment.h"
+#include "bsp_usart.h"
+#include "bsp_solarpanel.h"
+#include "bsp_SW.h"
+#include "LobotSerialServoControl.h" // 导入库文件
+#include <ESP32Servo.h>
+
+
+Servo servoB;
+Servo servoC;
+
+// ===== WIFI及NTP配置 =====
+const char *ssid = "QS_OFFICE";        // WIFI账户
+const char *password = "fablab108";      // WIFI密码
+
+#define NTP1 "ntp1.aliyun.com"
+#define NTP2 "ntp2.aliyun.com"
+#define NTP3 "ntp3.aliyun.com"
+
+
+// ===== 舵机引脚定义 =====
+#define sp_left_spin_pin  12  //太阳能转动电机左通道1 数字   寻找光强的舵机
+#define sp_right_spin_pin 13  //太阳能转动电机右通道1 数字  寻找光强的舵机
+#define BUS_SERVO_PIN 14 // 总线舵机假设接在GPIO14（此处为伪代码）
+
+
+
+
+//
+#define SERVO_SERIAL_RX   35
+#define SERVO_SERIAL_TX   5
+
+
+// ===== 命令数据结构 =====
+// 每组命令包含：指定的时间（时和分）、舵机B/C平行转动角度、总线舵机角度
+// 三个数据为一组
+#define MAX_COMMANDS 10
+struct Command {
+  int hour;       // 命令执行的小时（0～23）
+  int minute;     // 命令执行的分钟（0～59）
+  int pairAngle;  // 舵机B/C平行转动角度（0～90）
+  int busAngle;   // 总线舵机角度（伪代码，范围按实际要求设定）
+};
+
+Command commands[MAX_COMMANDS];
+int commandCount = 0;  // 当前有效命令数量
+int currentCommand = 0; // 当前待执行的命令索引
+
+// ===== 串口接收数据 =====
+String serialData = "";
+
+// ===== 辅助函数 =====
+
+// 判断当前网络时间是否已达到或超过命令规定的时分
+bool isTimeReached(const Command &cmd) {
+  struct tm timeInfo;
+  if (!getLocalTime(&timeInfo)) {
+    Serial.println("未能获取当前网络时间");
+    return false;
+  }
+  int currentMinutes = timeInfo.tm_hour * 60 + timeInfo.tm_min;
+  int cmdMinutes = cmd.hour * 60 + cmd.minute;
+  return currentMinutes >= cmdMinutes;
+}
+
+
+// 解析串口输入的命令字符串，例如：
+//   "#1030,040,060,1250,060,080;"
+void processSerialCommand(const String &cmd) {
+  Serial.print("收到命令字符串：");
+  Serial.println(cmd);
+
+  // 检查命令是否以 '#' 开头
+  if (!cmd.startsWith("#")) {
+    Serial.println("错误：命令不以 '#' 开头");
+    return;
+  }
+  // 去除起始符 '#' 和末尾的 ';'
+  String content = cmd.substring(1, cmd.length() - 1); // 去除首尾特殊字符
+
+  // 按逗号分隔，理论上每3个数值构成一组命令
+  int tokenCount = 0;
+  int tokens[MAX_COMMANDS * 3]; // 临时存储解析出的数字
+  int startIndex = 0;
+  while (startIndex < content.length()) {
+    int commaIndex = content.indexOf(',', startIndex);
+    String token;
+    if (commaIndex == -1) {
+      token = content.substring(startIndex);
+    } else {
+      token = content.substring(startIndex, commaIndex);
+    }
+    token.trim();
+    if (token.length() > 0) {
+      int val = token.toInt();
+      tokens[tokenCount++] = val;
+    }
+    if (commaIndex == -1) break;
+    startIndex = commaIndex + 1;
+    if (tokenCount >= MAX_COMMANDS * 3) break; // 超过最大命令数则退出
+  }
+  if (tokenCount % 3 != 0) {
+    Serial.println("错误：命令数据不完整，每组应包含3个数值");
+    return;
+  }
+  commandCount = tokenCount / 3;
+  for (int i = 0; i < commandCount; i++) {
+    int timeVal   = tokens[i * 3];     // 如 1030 表示 10:30
+    int pairAngle = tokens[i * 3 + 1];   // 舵机B/C平行转动角度
+    int busAngle  = tokens[i * 3 + 2];   // 总线舵机角度
+
+    int hour = timeVal / 100;
+    int minute = timeVal % 100;
+    if (pairAngle < 0 || pairAngle > 90) {
+      Serial.print("错误：第");
+      Serial.print(i + 1);
+      Serial.println("组数据，平行舵机角度需在0-90之间");
+      continue;
+    }
+    // 根据需要可以增加对busAngle的检查
+
+    commands[i].hour = hour;
+    commands[i].minute = minute;
+    commands[i].pairAngle = pairAngle;
+    commands[i].busAngle = busAngle;
+  }
+  Serial.print("解析到 ");
+  Serial.print(commandCount);
+  Serial.println(" 组命令，等待执行。");
+  currentCommand = 0; // 重置命令索引，从第一组命令开始执行
+}
+
+
+
+
+HardwareSerial HardwareSerial(0);
+LobotSerialServoControl BusServo(HardwareSerial);
+//变量区
+// 定义串口任务句柄
+TaskHandle_t SerialTaskHandle;
+
+// // REPLACE WITH YOUR RECEIVER MAC Address
+// uint8_t broadcastAddress[] = {0xC4, 0xDE, 0xE2, 0x9D, 0x56, 0xB0};  //接收端代码MAC地址
+// // Structure example to send data
+// typedef struct struct_message {
+//   char a[32];
+//   int b;
+//   float c;
+//   bool d;
+// } struct_message;
+
+// // Create a struct_message called myData
+// struct_message myData;
+
+// esp_now_peer_info_t peerInfo;
+
+// // callback when data is sent
+// void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+//   Serial.print("\r\nLast Packet Send Status:\t");
+//   Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
+// }
+
+void GPIO_INIT(){
+  //IO模式初始化
+  //爪子：气泵电磁阀气压计
+  pinMode(pump_pin, OUTPUT);
+  pinMode(e_valve, OUTPUT);
+  pinMode(air_sensor_pin, INPUT);
+  //爪子：n20，压力，内触碰开关，外触碰开关
+  pinMode(claw1_pin, OUTPUT);
+  pinMode(claw2_pin, OUTPUT);
+  pinMode(claw_pressure_pin, INPUT);  //模拟输入
+  pinMode(claw_open_button_pin, INPUT_PULLUP);
+  pinMode(claw_sw_pin, INPUT_PULLUP);
+  //太阳能板：n20电机，舵机，光照传感器
+  pinMode(sp_pin1, OUTPUT);
+  pinMode(sp_pin2, OUTPUT);
+  pinMode(sp_left_spin_pin, OUTPUT);
+  pinMode(sp_right_spin_pin, OUTPUT);
+  pinMode(sp_light_sensor_up, INPUT);
+  pinMode(sp_light_sensor_down, INPUT);
+  //摄像头图传开关
+  pinMode(camera_sw, OUTPUT);
+}
+ 
+void setup() {
+  // Init Serial Monitor
+  Serial.begin(115200);
+  Serial2.begin(115200);
+  Serial.println();
+
+
+
+// ----- WiFi连接及NTP时间初始化 -----
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  Serial.print("正在连接WiFi");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nWiFi connected!");
+  // 使用东八区（UTC+8）时间，连接三个阿里云NTP服务器
+  configTime(8 * 3600, 0, NTP1, NTP2, NTP3);
+
+  // ----- 舵机初始化 -----
+  servoB.attach(sp_left_spin_pin);
+  servoC.attach(sp_right_spin_pin);
+  servoB.write(180); // 初始位置：对应角度0°（servoB=180，servoC=0）
+  servoC.write(0);
+
+
+  // Set device as a Wi-Fi Station
+  // WiFi.mode(WIFI_STA);
+  // if (esp_now_init() != ESP_OK) {
+  //   Serial.println("Error initializing ESP-NOW");
+  //   return;
+  // }
+  // esp_now_register_send_cb(OnDataSent);
+  // memcpy(peerInfo.peer_addr, broadcastAddress, 6);
+  // peerInfo.channel = 0;  
+  // peerInfo.encrypt = false;   
+  // if (esp_now_add_peer(&peerInfo) != ESP_OK){
+  //   Serial.println("Failed to add peer");
+  //   return;
+  // }
+  BusServo.OnInit();
+  HardwareSerial.begin(115200,SERIAL_8N1,SERVO_SERIAL_RX,SERVO_SERIAL_TX);
+  // BusServo.LobotSerialServoMove(1,90,1000); // 设置1号舵机运行到500脉宽位置，运行时间为1000毫秒
+  BusServo.LobotSerialServoMove(1,500,1000); // 设置1号舵机运行到500脉宽位置，运行时间为1000毫秒
+  delay(1000);
+
+  GPIO_INIT();
+  //模块初始化
+  servo_init();
+  // 创建串口任务
+  xTaskCreatePinnedToCore(
+      serialEventTask,   // 任务函数
+      "SerialEventTask", // 任务名称
+      8192,              // 任务堆栈大小
+      NULL,              // 任务参数
+      1,                 // 任务优先级
+      &SerialTaskHandle, // 任务句柄
+      1                  // 任务运行在核心1上
+  );
+  // digitalWrite(claw1_pin, LOW);   //闭合
+  // digitalWrite(claw2_pin, HIGH);
+  // delay(1000);
+  // sp_open(65,1800);  //太阳能板以50bg速度开
+  // sp_close(65,1800);//太阳能板以50速度关,延时1800ms
+
+  Serial.println("等待指令，格式例如：");
+  Serial.println("  #1030,040,060,1250,060,080;");
+}
+
+void loop() {
+  // --- 接收并解析串口数据 ---
+  while (Serial.available() > 0) {
+    char c = Serial.read();
+    // 当收到起始符 '#' 时，清空之前的数据
+    if (c == '#') {
+      serialData = "";
+    }
+    serialData += c;
+    // 当收到结束符 ';' 时，认为命令接收完毕，开始解析
+    if (c == ';') {
+      processSerialCommand(serialData);
+      serialData = "";
+    }
+  }
+
+  // --- 检查并执行命令 ---
+  if (commandCount > 0 && currentCommand < commandCount) {
+    // 检查当前网络时间是否已达到或超过当前命令的时分
+    if (isTimeReached(commands[currentCommand])) {
+      // 计算平行舵机的目标角度：servoB=180 - pairAngle, servoC=pairAngle
+      int targetPairAngle = commands[currentCommand].pairAngle;
+      int targetServoB = 180 - targetPairAngle;
+      int targetServoC = targetPairAngle;
+      servoB.write(targetServoB);
+      servoC.write(targetServoC);
+      
+      // 伪代码：设置总线舵机角度
+      // busServo.write(commands[currentCommand].busAngle);
+      
+      Serial.print("执行命令 ");
+      Serial.print(currentCommand + 1);
+      Serial.print("（计划执行时间 ");
+      Serial.print(commands[currentCommand].hour);
+      Serial.print(":");
+      Serial.print(commands[currentCommand].minute);
+      Serial.print("）：舵机B设置为 ");
+      Serial.print(targetServoB);
+      Serial.print("°，舵机C设置为 ");
+      Serial.print(targetServoC);
+      Serial.print("°，总线舵机设置为 ");
+      Serial.print(commands[currentCommand].busAngle);
+      Serial.println("°");
+      
+      currentCommand++; // 指向下一组命令
+    }
+  }
+
+  // 每隔1秒检查一次网络时间
+  delay(1000);
+
+
+
+
+
+  // Send message via ESP-NOW
+  // esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *) &myData, sizeof(myData));
+  //usart_rec1();
+  if(sun_state_num == 1)sun_chark();
+  // sp_open(65,1800);
+  // sp_close(65,1800);
+  if(sun_state_input == 1)
+  {
+    sp_open(55,1800);
+    sun_state_input = 0;
+  }
+  if(sun_state_output == 1)
+  {
+    sp_close(55,1800);
+    sun_state_output = 0;
+  }
+  attach_to_object();
+  // usart_rec();
+  // arm_mode=digitalRead(arm_mode_sw);
+  // interpret_SW();
+  // Serial2.print(arm_mode);
+}
+
+void serialEventTask(void *pvParameters) {
+  while (1) {
+    // if (Serial.available() > 0) {
+    //   char receivedData = Serial.read();
+    //   if (receivedData == 'A') {//爪开
+    //     open_arm();
+    //     claw_close_state = 0;
+    //   } else if (receivedData == 'B') {//爪关
+    //     close_arm();
+    //     claw_close_state = 0;
+    //   } else if (receivedData == 'C') {//爪停
+    //     stop_arm();
+    //     claw_close_state = 0;
+    //   } else if (receivedData == 'D') {//开关泵
+    //     digitalWrite(e_valve, !digitalRead(e_valve));
+    //     air_state = 0;
+    //   } else if (receivedData == 'E') {//开关阀
+    //     digitalWrite(pump_pin, !digitalRead(pump_pin));
+    //     air_state = 0;
+    //   } else if (receivedData == 'O') { // 自动追阳模式
+    //     sun_state_num = !sun_state_num;
+    //   } else if (receivedData == 'L') { // 放出太阳能
+    //     sun_state_input = !sun_state_input;
+    //   } else if (receivedData == 'M') { // 收回太阳能
+    //     sun_state_output = !sun_state_output;
+    //   } else if (receivedData == 'F') {//关闭图传
+    //     digitalWrite(camera_sw, LOW);
+    //   } else if (receivedData == 'G') {//开启图传
+    //     digitalWrite(camera_sw, HIGH);
+    //   }else if (receivedData == '1') {//切换爪子和吸盘
+    //     arm_mode = !arm_mode;
+    //     digitalWrite(e_valve, HIGH);
+    //     stop_arm();
+    //     air_state = 0;
+    //   }else if (receivedData == '2') {//开启关闭自动吸附
+    //     air_state = !air_state;
+    //   }
+    //   receivedData = 0;
+    // }
+    if (Serial2.available() > 0) {
+      char receivedData = Serial2.read();
+      Serial.println(receivedData);
+      if (receivedData == 'A') {//爪开
+        open_arm();
+        claw_close_state = 0;
+      } else if (receivedData == 'B') {//爪关
+        close_arm();
+        claw_close_state = 0;
+      } else if (receivedData == 'C') {//爪停
+        stop_arm();
+        claw_close_state = 0;
+      } else if (receivedData == 'D') {//开关泵
+        digitalWrite(e_valve, !digitalRead(e_valve));
+        air_state = 0;
+      } else if (receivedData == 'E') {//开关阀
+        digitalWrite(pump_pin, !digitalRead(pump_pin));
+        air_state = 0;
+      } else if (receivedData == 'O') { // 自动追阳模式
+        sun_state_num = !sun_state_num;
+      } else if (receivedData == 'L') { // 放出太阳能
+        sun_state_input = !sun_state_input;
+      } else if (receivedData == 'M') { // 收回太阳能
+        sun_state_output = !sun_state_output;
+      } else if (receivedData == 'F') {//关闭图传
+        digitalWrite(camera_sw, LOW);
+      } else if (receivedData == 'G') {//开启图传
+        digitalWrite(camera_sw, HIGH);
+      }else if (receivedData == '1') {//切换爪子和吸盘
+        arm_mode = !arm_mode;
+        digitalWrite(e_valve, HIGH);
+        stop_arm();
+        air_state = 0;
+      }else if (receivedData == '2') {//开启关闭自动吸附
+        air_state = !air_state;
+      }
+      receivedData = 0;
+    }
+    vTaskDelay(10 / portTICK_PERIOD_MS); // 避免任务过度占用CPU时间
+  }
+}
