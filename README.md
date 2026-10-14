@@ -3,14 +3,14 @@
 *A modular quadcopter research platform exploring solar-assisted endurance and multi-terrain perching for outdoor observation.*
 
 <!-- HERO PHOTO: Save the best physical photo of the complete drone as assets/drone-prototype.jpg, then uncomment the next line. -->
-<!-- ![Complete physical UAV prototype](assets/drone-prototype.jpg) -->
+![Complete physical UAV prototype](assets/drone-prototype.jpg)
 
 ## Overview
 
 This project explores a UAV platform for longer-duration outdoor research and wildlife observation. It combines a deployable solar-tracking system with three ways to transition from flight to a stationary state: suction, gripping, and flotation. The design aims to reduce reliance on fixed charging locations; **infinite endurance is a design objective, not a capability demonstrated by the current prototype**.
 
-<!-- CAD OVERVIEW: Save the overall CAD render as assets/drone-cad-overview.png, then uncomment the next line. -->
-<!-- ![CAD overview of the UAV platform](assets/drone-cad-overview.png) -->
+<!-- CAD OVERVIEW: Save the overall CAD render as assets/drone-cad-overview.jpg, then uncomment the next line. -->
+![CAD overview of the UAV platform](assets/drone-cad-overview.jpg)
 
 ## System overview
 
@@ -30,8 +30,8 @@ A dual-suction-cup assembly uses silicone cups, a 13 L/min air pump, and pressur
 
 <!-- PHOTO: Save the physical wall-attachment photo as assets/suction-wall-test.jpg. -->
 <!-- ![UAV attached to a wall using the suction module](assets/suction-wall-test.jpg) -->
-<!-- CAD: Save the suction-module render as assets/suction-cad.png. -->
-<!-- ![CAD design of the suction module](assets/suction-cad.png) -->
+<!-- CAD: Save the suction-module render as assets/suction-cad.jpg. -->
+![CAD design of the suction module](assets/suction-cad.jpg)
 
 ### Gripper
 
@@ -39,8 +39,8 @@ The claw is inspired by biological gripping structures. A geared linkage synchro
 
 <!-- PHOTO: Save the physical claw photo as assets/gripper-prototype.jpg. -->
 <!-- ![Physical gripper prototype](assets/gripper-prototype.jpg) -->
-<!-- CAD: Save the gripper render as assets/gripper-cad.png. -->
-<!-- ![CAD design of the gripper](assets/gripper-cad.png) -->
+<!-- CAD: Save the gripper render as assets/gripper-cad.jpg. -->
+![CAD design of the gripper](assets/gripper-cad.jpg)
 
 ### Flotation module
 
@@ -48,8 +48,8 @@ An inflatable ring provides buoyancy on water and can help cushion landing on un
 
 <!-- PHOTO: Save the physical flotation-device photo as assets/flotation-prototype.jpg. -->
 <!-- ![Physical flotation module](assets/flotation-prototype.jpg) -->
-<!-- CAD: Save the flotation-module render as assets/flotation-cad.png. -->
-<!-- ![CAD design of the flotation module](assets/flotation-cad.png) -->
+<!-- CAD: Save the flotation-module render as assets/flotation-cad.jpg. -->
+![CAD design of the flotation module](assets/flotation-cad.jpg)
 
 ## 2. Solar harvesting and tracking
 
@@ -63,19 +63,20 @@ E_{net}(\theta_{max}) = E_{gain}(\theta_{max}) - E_{servo}(\theta_{max})
 
 A solar-position simulation was run for Santa Barbara on March 7, 2025, using a 10-second time step and idealized clear-sky assumptions. The paper reports an optimal threshold of approximately **7.4° under those modeled conditions**. This is a simulation result for a particular day and model—not a universal optimum or proof of extended flight endurance. The full paper contains the detailed method, assumptions, calculations, and discussion.
 
-<!-- CAD: Save the solar-tracking mechanism render as assets/solar-tracking-cad.png. -->
-<!-- ![CAD design of the solar-tracking mechanism](assets/solar-tracking-cad.png) -->
-<!-- FIGURE: Save the annual sun-path illustration as assets/annual-sun-path.png. -->
-<!-- ![Illustration of the sun's path through the year](assets/annual-sun-path.png) -->
-<!-- FIGURE: Save the Python simulation graph as assets/solar-threshold-results.png. -->
-<!-- ![Solar-tracking threshold simulation results](assets/solar-threshold-results.png) -->
+<!-- CAD: Save the solar-tracking mechanism render as assets/solar-tracking-cad.jpg. -->
+![CAD design of the solar-tracking mechanism](assets/solar-tracking-cad.jpg)
+<!-- FIGURE: Save the annual sun-path illustration as assets/annual-sun-path.jpg. -->
+![Illustration of the sun's path through the year](assets/annual-sun-path.jpg)
+<!-- FIGURE: Save the Python simulation graph as assets/solar-threshold-results.jpg. -->
+![Solar-tracking threshold simulation results](assets/solar-threshold-results.jpg)
 
 ## 3. Electronics and control
 
 The flight controller is built around an **STM32F407VGT6** with inertial, altitude, and magnetic sensing, PID-based stabilization, and onboard flight-data storage. A separate **ESP32** board coordinates auxiliary systems such as the suction pump, valves, servos, and module interfaces.
 
 <!-- OPTIONAL PHOTO: Save a photo of the actual flight-controller PCB as assets/flight-controller.jpg. -->
-<!-- ![Flight-controller PCB](assets/flight-controller.jpg) -->
+![Flight-controller PCB](assets/flight-controller1.jpg)
+![Main-controller PCB](assets/flight-controller2.jpg)
 
 ## 4. Prototype tests
 
@@ -101,9 +102,9 @@ Next steps include reducing mass and improving balance, weatherproofing, measuri
 
 This README is a brief project overview. **For the complete methods, design rationale, equations, diagrams, experiments, results, references, and limitations, please refer to the full 40-page research paper.**
 
-- **Full research paper:** [`docs/full-paper.pdf`](docs/full-paper.pdf) — upload the paper at this path, or update the link to match its location.
-- **Source code:** [`src/`](src/) — update this link if your code is stored elsewhere.
-- **CAD and 3D-print files:** [`cad/`](cad/) — update this link to match your folders.
+- **Full research paper and methodology:** [`docs/full-paper.pdf`](docs/full-paper.pdf) 
+- **Source code:** [`src/`](src/) 
+- **CAD and 3D-print files:** [`cad/`](cad/) 
 - **Photos and figures:** [`assets/`](assets/)
 
 ---
